@@ -20,6 +20,19 @@ description: 开源项目推广方案规划与定时执行。自动分析项目�
 
 ---
 
+## 依赖技能
+
+本 skill 依赖以下技能，请确保已安装：
+
+| 技能 | 用途 | 安装命令 |
+|------|------|---------|
+| social-media-cn | 按方案生成各平台文案 | `npx skills add therain2020/social-media-cn -g -y` |
+| humanizer-zh | 去除文案 AI 生成痕迹 | `npx skills add therain2020/humanizer-zh -g -y` |
+
+可用 `Skill(skill="social-media-cn")` 和 `Skill(skill="humanizer-zh")` 调用。
+
+---
+
 ## 执行流程
 
 skill 被调用后，严格按以下 6 步执行。每完成一步，输出进度标记。
@@ -143,62 +156,47 @@ Agent 完成后，读取 `promo-analysis.md`，确认内容完整。
 | ... | ... | ... | ... | ... |
 ```
 
-### Step 2：为每个排期槽位生成文案（调用 social-media-cn）
+### Step 2：调度文案生成（调用 social-media-cn）
 
 按内容矩阵从上到下，对每个 ⬜ 槽位执行以下序列。
 
-#### social-media-cn 调用协议
+#### 2a. 调用 social-media-cn
 
-调用 `social-media-cn` skill 时，传入结构化参数：
+使用 Skill 工具调用 social-media-cn，传入结构化参数（协议详见本文"通信协议"节）：
 
 ```
+Skill(skill="social-media-cn", args="
 平台：[小红书/小黑盒]
-角度：[A-痛点 B-技术 C-对比 D-开源 E-踩坑 F-教程]
+角度：[A-痛点/B-技术/C-对比/D-开源/E-踩坑/F-教程]
 Hook：[内容矩阵中的 Hook 文案]
-项目分析：[promo-analysis.md 的绝对路径]
-输出路径：promo-content/[project]/[platform]/[date]-[angle].md
+项目分析路径：[promo-analysis.md 的绝对路径]
+输出路径：[promo-content/[project]/[platform]/[date]-[angle].md 的绝对路径]
+")
 ```
 
-social-media-cn 应读取 promo-analysis.md 了解项目背景，按平台模板生成完整文案。
+social-media-cn 应返回 `✅ [平台] [角度] → [文件路径]`。
 
-#### 每槽位执行序列
+#### 2b. 去 AI 味
 
-1. **调用 `social-media-cn` skill**，按上述协议传入参数
-2. 将生成的文案保存到 `promo-content/[project]/[platform]/[date]-[angle].md`
-3. **调用 `humanizer-zh` skill** 对文案去 AI 味（规则第 5 条强制要求）
-4. 在内容矩阵中更新状态为 ✅，填入文件链接
+social-media-cn 生成完成后，调用 humanizer-zh skill 对输出文件去 AI 味：
 
-#### 内联备用模板（social-media-cn 不可用时）
-
-**小红书模板：**
 ```
-[标题 Hook，20字以内，带情绪]
-
-[痛点场景，2-3句，让读者觉得"这就是我"]
-
-[解决方案，介绍项目怎么解决这个痛点]
-
-[核心亮点，2-3个 emoji bullet point]
-
-[结尾引导 Star / 试用，1句话]
-
-#标签1 #标签2 #标签3
+Skill(skill="humanizer-zh", args="[输出文件的绝对路径]")
 ```
 
-**小黑盒模板：**
-```
-[标题 Hook，15字以内，技术向]
+#### 2c. 更新状态
 
-[技术背景/问题，为什么要做这个]
+在内容矩阵中将对应槽位状态更新为 ✅，填入文案文件路径。
 
-[技术方案和亮点，与已有方案的区别]
+#### 2d. 依赖缺失处理
 
-[上手体验/数据对比]
+如果 social-media-cn skill 未安装（Skill 工具返回错误），不自行生产文案。而是：
+1. 输出提示：`⚠️ social-media-cn skill 未安装。请先运行：`
+   `npx skills add therain2020/social-media-cn -g -y`
+2. 将该槽位状态标记为 `⚠️ 等待安装`
+3. 继续处理剩余槽位
 
-[GitHub 链接 + 求 Star]
-```
-
-**Step 2 输出**：每生成完一篇，输出 `✅ [平台] [角度] → [文件路径]`
+**Step 2 输出**：每调度一篇，输出 `✅ [平台] [角度] → [文件路径]` 或 `⚠️ [槽位] 等待 social-media-cn 安装`
 
 ### Step 3：创建 CronCreate 定时提醒
 
@@ -283,7 +281,7 @@ CronList 可查看所有提醒
 2. **避开冲突**：两个平台不排同一天，至少间隔 1 天
 3. **小红书优先周一/周四/周五**，**小黑盒优先周三/周六**
 4. **Cron 分钟随机化**：用 3,7,13,17,23,27,33,37,43,47,53,57 中的一个，不准用 0 或 30
-5. **文案必须先过 humanizer-zh**：生成的中文文案如果闻起来像 AI，跑一遍 `/humanizer-zh`
+5. **文案必须先过 humanizer-zh**：本 skill 在 Step 2b 调用 humanizer-zh 对 social-media-cn 产出的文案去 AI 味。social-media-cn 侧不自行调用
 6. **日期合法性校验**：计算 Cron 日字段时，如果 `日±N` 超出当月范围，必须进位或退位到相邻月份。例如 1月31日 +1 → 2月1日，3月1日 -1 → 2月28/29日。CronCreate 不会自动处理溢出，传无效日期会静默失败。
 
 ---
@@ -299,33 +297,94 @@ CronList 可查看所有提醒
 
 ---
 
+## 通信协议
+
+> 本段与 social-media-cn SKILL.md 保持同步。promo-planner 与 social-media-cn 的调用协议。
+
+### 角色
+
+| 角色 | 技能 | 职责 |
+|------|------|------|
+| 方案方 | promo-planner | 项目分析 → 角度提炼 → 内容矩阵 → Hook 标题 → 排期日历 → CronCreate |
+| 执行方 | social-media-cn | 接收参数 → 按角度选结构 → 按平台套模板 → 产出文案 → 返回路径 |
+
+### 调用参数（方案方 → 执行方）
+
+方案方调用执行方时传入以下结构化参数：
+
+```
+平台：[小红书 | 小黑盒]
+角度：[A-痛点 | B-技术 | C-对比 | D-开源 | E-踩坑 | F-教程]
+Hook：[已写好的标题文案，执行方直接使用]
+项目分析路径：[promo-analysis.md 的绝对路径]
+输出路径：[目标文件绝对路径]
+```
+
+### 角度 → 正文结构
+
+| 角度 | 叙事结构 |
+|------|---------|
+| A-痛点 | 痛点场景 → 为什么以前解决不了 → 这个方案怎么解决的 |
+| B-技术 | 技术背景 → 方案架构 + 关键实现 → 与替代方案的区别 |
+| C-对比 | 主流方案简述 → 逐项对比 → 适用场景建议 |
+| D-开源 | 为什么做 → 核心亮点 + 技术栈 → Star/PR 邀请 |
+| E-踩坑 | 踩坑背景 → 逐坑(问题→原因→解决) → 经验总结 |
+| F-教程 | 目标读者 → 分步教程 → 常见问题 |
+
+### 模式判断（执行方）
+
+执行方通过调用内容是否包含 `平台：` + `角度：` + `项目分析路径：` 来判断：
+- **协作模式**（含这三个标记）→ 跳过 Step 0，读取分析文件，用 Hook 做标题
+- **独立模式**（不含）→ 完整流程，自己做项目分析
+
+### 输出约定
+
+- 协作模式：保存到方案方指定的 `输出路径`
+- 独立模式：保存到 `promo-content/[平台]/[日期]-[主题]/note.md`
+- 完成后均输出：`✅ [平台] [角度] → [文件路径]`
+
+### 错误处理
+
+- 执行方不可用：方案方终止 Step 2，提示 `npx skills add therain2020/social-media-cn -g -y`
+- 项目分析文件不存在：执行方终止并报错，提示方案方先完成 Step 0
+
+---
+
 ## 搭配技能
 
 ```
-promo-planner → social-media-cn → CronCreate
-     ↓               ↓               ↓
- 方案+日历      每篇文案         定时提醒
+promo-planner → social-media-cn → humanizer-zh → CronCreate
+     ↓               ↓               ↓            ↓
+ 方案+日历      每篇文案        去 AI 味    定时提醒
 ```
 
 ---
 
 ## 文件结构
 
+本 skill 只写以下目录。`promo-content/` 由 social-media-cn 产出，本 skill 不写。
+
 ```
-promo-plans/
-├── [project]-plan.md        # 推广方案 + 内容矩阵
-└── [project]-schedule.md    # CronCreate 提醒清单
-promo-content/
-└── [project]/
-    ├── xiaohongshu/
-    │   ├── W1-[date]-[angle].md
-    │   └── ...
-    └── xiaoheihe/
-        └── ...
-execution-log/
-└── [project]/
-    └── [date]-[platform].md  # 发布后手动记录
-references/
-├── schedule-patterns.md         # Cron 表达式速查
-└── execution-log-template.md    # 复盘记录模板
+[project-path]/
+├── promo-analysis.md                  # Step 0 产出，供 social-media-cn 读取
+│
+├── promo-plans/                       # 本 skill 产出
+│   ├── [project]-plan.md              # 推广方案 + 内容矩阵
+│   └── [project]-schedule.md          # CronCreate 提醒清单
+│
+├── promo-content/                     # social-media-cn 产出（本 skill 不写此目录）
+│   └── [project]/
+│       ├── xiaohongshu/
+│       │   ├── [date]-[angle].md
+│       │   └── ...
+│       └── xiaoheihe/
+│           └── ...
+│
+├── execution-log/                     # 发布后复盘记录
+│   └── [project]/
+│       └── [date]-[platform].md
+│
+└── references/
+    ├── schedule-patterns.md           # Cron 表达式速查
+    └── execution-log-template.md      # 复盘记录模板
 ```

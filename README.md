@@ -22,9 +22,9 @@ npx skills add therain2020/promo-planner -g -y
 ## 搭配技能
 
 ```
-promo-planner → social-media-cn → CronCreate
-   ↓                ↓                ↓
-方案+日历      每篇文案         定时提醒
+promo-planner → social-media-cn → humanizer-zh → CronCreate
+     ↓               ↓               ↓            ↓
+ 方案+日历      每篇文案        去 AI 味    定时提醒
 ```
 
 ## 目录
@@ -39,10 +39,7 @@ promo-planner/
 ├── promo-plans/                  # 推广方案
 │   ├── xxx-plan.md
 │   └── xxx-schedule.md
-├── promo-content/                # 生成的文案
-│   └── xxx/
-│       ├── xiaohongshu/
-│       └── xiaoheihe/
+├── promo-content/                # social-media-cn 产出（本 skill 不写）
 └── execution-log/                # 发布后数据复盘
     └── xxx/
         └── YYYY-MM-DD-platform.md
