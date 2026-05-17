@@ -1,6 +1,6 @@
 ---
 name: promo-planner
-description: 开源项目推广方案规划与定时执行。自动分析项目代码提炼推广角度，生成多平台内容日历，通过 Claude Code /schedule 设置定时提醒，追踪执行进度。Use when user asks to plan promotion for an open-source project, create a content calendar, schedule social media posts, or track marketing execution.
+description: 开源项目推广方案规划与定时执行。自动分析项目代码提炼推广角度，生成多平台内容日历，通过 Claude Code CronCreate 设置定时提醒，追踪执行进度。Use when user asks to plan promotion for an open-source project, create a content calendar, schedule social media posts, or track marketing execution.
 ---
 
 # 推广方案规划 + 定时执行 · Promo Planner
@@ -22,7 +22,7 @@ description: 开源项目推广方案规划与定时执行。自动分析项目�
 
 ## 执行流程
 
-skill 被调用后，严格按以下 5 步执行。每完成一步，输出进度标记。
+skill 被调用后，严格按以下 6 步执行。每完成一步，输出进度标记。
 
 ### Step 0：项目分析（子 Agent，必须）
 
@@ -131,7 +131,7 @@ Agent 完成后，读取 `promo-analysis.md`，确认内容完整。
 
 #### 文件 2：`promo-plans/[project]-schedule.md`
 
-记录所有已创建的 `/schedule` 提醒，格式：
+记录所有已创建的 `CronCreate` 提醒，格式：
 
 ```markdown
 # 提醒清单
@@ -145,24 +145,69 @@ Agent 完成后，读取 `promo-analysis.md`，确认内容完整。
 
 ### Step 2：为每个排期槽位生成文案（调用 social-media-cn）
 
-按内容矩阵从上到下，对每个 ⬜ 槽位：
+按内容矩阵从上到下，对每个 ⬜ 槽位执行以下序列。
 
-1. **调用 `social-media-cn` skill**，传入角度类型和 Hook
+#### social-media-cn 调用协议
+
+调用 `social-media-cn` skill 时，传入结构化参数：
+
+```
+平台：[小红书/小黑盒]
+角度：[A-痛点 B-技术 C-对比 D-开源 E-踩坑 F-教程]
+Hook：[内容矩阵中的 Hook 文案]
+项目分析：[promo-analysis.md 的绝对路径]
+输出路径：promo-content/[project]/[platform]/[date]-[angle].md
+```
+
+social-media-cn 应读取 promo-analysis.md 了解项目背景，按平台模板生成完整文案。
+
+#### 每槽位执行序列
+
+1. **调用 `social-media-cn` skill**，按上述协议传入参数
 2. 将生成的文案保存到 `promo-content/[project]/[platform]/[date]-[angle].md`
-3. 在内容矩阵中更新状态为 ✅，填入文件链接
+3. **调用 `humanizer-zh` skill** 对文案去 AI 味（规则第 5 条强制要求）
+4. 在内容矩阵中更新状态为 ✅，填入文件链接
 
-如果 `social-media-cn` 不可用，则按 `references/templates.md`（在 social-media-cn 仓库中）的模板手动生成。
+#### 内联备用模板（social-media-cn 不可用时）
+
+**小红书模板：**
+```
+[标题 Hook，20字以内，带情绪]
+
+[痛点场景，2-3句，让读者觉得"这就是我"]
+
+[解决方案，介绍项目怎么解决这个痛点]
+
+[核心亮点，2-3个 emoji bullet point]
+
+[结尾引导 Star / 试用，1句话]
+
+#标签1 #标签2 #标签3
+```
+
+**小黑盒模板：**
+```
+[标题 Hook，15字以内，技术向]
+
+[技术背景/问题，为什么要做这个]
+
+[技术方案和亮点，与已有方案的区别]
+
+[上手体验/数据对比]
+
+[GitHub 链接 + 求 Star]
+```
 
 **Step 2 输出**：每生成完一篇，输出 `✅ [平台] [角度] → [文件路径]`
 
-### Step 3：创建 /schedule 提醒（实际调用 CronCreate）
+### Step 3：创建 CronCreate 定时提醒
 
 对内容矩阵中的每个发布槽位，创建 3 层提醒：
 
 **第 1 层 — 准备提醒（发布前 1 天 20:00）：**
 ```
 CronCreate(
-  cron: "3 20 [发布日-1] [月] *",
+  cron: "3 20 [发布日-1] [调整后的月] *",  // 日-1 跨月时月份也要调整，见规则 6
   prompt: "📋 明天发布预告：小红书《[Hook]》。确认文案和配图已就绪。路径：[文件路径]",
   recurring: false
 )
@@ -180,8 +225,8 @@ CronCreate(
 **第 3 层 — 复盘提醒（发布后 24 小时）：**
 ```
 CronCreate(
-  cron: "[随机分钟] [小时] [日+1] [月] *",
-  prompt: "📊 复盘：[平台]《[Hook]》。记录互动数据到 execution-log。效果好的话考虑做变体。",
+  cron: "[随机分钟] [小时] [日+1] [调整后的月] *",  // 日+1 跨月时月份也要调整，见规则 6
+  prompt: "📊 复盘：[平台]《[Hook]》。打开 execution-log-template 模板记录互动数据到 execution-log/[project]/[日期]-[平台].md。效果好的话考虑做变体。",
   recurring: false
 )
 ```
@@ -203,16 +248,32 @@ CronCreate(
 文案目录：  promo-content/[project]/
 ═══════════════════════════════════════════
 内容：      [N] 篇文案已生成
-提醒：      [N×3] 个 /schedule 已创建
+提醒：      [N×3] 个 CronCreate 已创建
 首发：      [日期] [平台]《[Hook]》
 ═══════════════════════════════════════════
 
 接下来你只需：
   收到提醒 → 打开App → 粘贴文案 → 点发布
+  24h 后复盘提醒 → 按 Step 5 记录数据
 
-/schedule list 可查看所有提醒
+CronList 可查看所有提醒
 ═══════════════════════════════════════════
 ```
+
+### Step 5：复盘流程（复盘提醒触发时执行）
+
+当第 3 层复盘 CronCreate 触发时，执行以下操作：
+
+1. 打开平台 App/网页，截图互动数据
+2. 按 `references/execution-log-template.md` 模板，创建 `execution-log/[project]/[YYYY-MM-DD]-[平台].md`
+3. 填入互动数据（阅读/点赞/收藏/评论/分享），记录评论精选和自我评估
+4. 回写 `promo-plans/[project]-plan.md` 内容矩阵对应行状态：
+   - 数据 > 预期的 150%（超出预期 50% 以上）→ 标记 🔥，追加一行变体排期（W+1），为新槽位执行 Step 2 + Step 3
+   - 数据在预期的 50%~150% 之间 → 标记 ✅
+   - 数据 < 预期的 50% → 标记 ⚠️，记录原因，决定是否调整角度
+5. 更新 `promo-plans/[project]-schedule.md` 中对应提醒状态为 `completed`
+
+**Step 5 输出**：`📊 [平台]《[Hook]》复盘 → [关键数据] | 决策: [做变体/调整角度/继续观察]`
 
 ---
 
@@ -223,6 +284,7 @@ CronCreate(
 3. **小红书优先周一/周四/周五**，**小黑盒优先周三/周六**
 4. **Cron 分钟随机化**：用 3,7,13,17,23,27,33,37,43,47,53,57 中的一个，不准用 0 或 30
 5. **文案必须先过 humanizer-zh**：生成的中文文案如果闻起来像 AI，跑一遍 `/humanizer-zh`
+6. **日期合法性校验**：计算 Cron 日字段时，如果 `日±N` 超出当月范围，必须进位或退位到相邻月份。例如 1月31日 +1 → 2月1日，3月1日 -1 → 2月28/29日。CronCreate 不会自动处理溢出，传无效日期会静默失败。
 
 ---
 
@@ -240,7 +302,7 @@ CronCreate(
 ## 搭配技能
 
 ```
-promo-planner → social-media-cn → /schedule
+promo-planner → social-media-cn → CronCreate
      ↓               ↓               ↓
  方案+日历      每篇文案         定时提醒
 ```
@@ -252,7 +314,7 @@ promo-planner → social-media-cn → /schedule
 ```
 promo-plans/
 ├── [project]-plan.md        # 推广方案 + 内容矩阵
-└── [project]-schedule.md    # /schedule 提醒清单
+└── [project]-schedule.md    # CronCreate 提醒清单
 promo-content/
 └── [project]/
     ├── xiaohongshu/
@@ -264,5 +326,6 @@ execution-log/
 └── [project]/
     └── [date]-[platform].md  # 发布后手动记录
 references/
-└── schedule-patterns.md      # Cron 表达式速查
+├── schedule-patterns.md         # Cron 表达式速查
+└── execution-log-template.md    # 复盘记录模板
 ```
